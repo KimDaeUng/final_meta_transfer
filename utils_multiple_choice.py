@@ -170,6 +170,7 @@ if is_torch_available():
                     logger.info(f"Loading features from cached file {cached_features_file}")
                     features = torch.load(cached_features_file)
                     self.features_S, self.features_Q = features[0], features[1]
+                    self.len_Q = len(self.features_Q)
                     del features
 
                 else:
@@ -184,6 +185,7 @@ if is_torch_available():
 
                     logger.info("Support examples: %s", len(examples_S))
                     self.features_S = convert_examples_to_features(examples_S, label_list, max_seq_length, tokenizer,)
+                    logger.info("Query examples: %s", len(examples_Q))
                     self.features_Q = convert_examples_to_features(examples_Q, label_list, max_seq_length, tokenizer,)
                     self.len_Q = len(self.features_Q)
                     logger.info("Saving features into cached file %s", cached_features_file)

@@ -22,7 +22,7 @@ from sklearn.metrics import accuracy_score
 
 import torch
 from torch.optim import Adam
-from .data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
+from transformers.data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
 from torch.utils.data.sampler import RandomSampler, Sampler, SequentialSampler
 from torch.utils.data.dataloader import DataLoader
 from torch.nn import functional as F
@@ -97,7 +97,6 @@ class MetaTrainingArguments:
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
 
-    data_dir: str = field(metadata={"help": "Should contain the data files for the task."})
     outer_batch_size: int = field(
         default=2,
         metadata={"help":""},
@@ -216,31 +215,31 @@ def main():
         else None
     )
 
-    s2_train_dataset = (
-        MetaMultipleChoiceDataset(
-            data_dir=os.path.join(data_args.data_dir, 'ComVE_A'),
-            tokenizer=tokenizer,
-            task=data_args.task_name,
-            max_seq_length=data_args.max_seq_length,
-            overwrite_cache=data_args.overwrite_cache,
-            mode=Split.train,
-        )
-        if training_args.do_train
-        else None
-    )
+    # s2_train_dataset = (
+    #     MetaMultipleChoiceDataset(
+    #         data_dir=os.path.join(data_args.data_dir, 'ComVE_A'),
+    #         tokenizer=tokenizer,
+    #         task=data_args.task_name,
+    #         max_seq_length=data_args.max_seq_length,
+    #         overwrite_cache=data_args.overwrite_cache,
+    #         mode=Split.train,
+    #     )
+    #     if training_args.do_train
+    #     else None
+    # )
 
-    s3_train_dataset = (
-        MetaMultipleChoiceDataset(
-            data_dir=os.path.join(data_args.data_dir, 'ComVE_B'),
-            tokenizer=tokenizer,
-            task=data_args.task_name,
-            max_seq_length=data_args.max_seq_length,
-            overwrite_cache=data_args.overwrite_cache,
-            mode=Split.train,
-        )
-        if training_args.do_train
-        else None
-    )
+    # s3_train_dataset = (
+    #     MetaMultipleChoiceDataset(
+    #         data_dir=os.path.join(data_args.data_dir, 'ComVE_B'),
+    #         tokenizer=tokenizer,
+    #         task=data_args.task_name,
+    #         max_seq_length=data_args.max_seq_length,
+    #         overwrite_cache=data_args.overwrite_cache,
+    #         mode=Split.train,
+    #     )
+    #     if training_args.do_train
+    #     else None
+    # )
     # s1_train_dataset = (
     #     MultipleChoiceDataset(
     #         data_dir=os.path.join(data_args.data_dir, 'swag'),
@@ -303,8 +302,8 @@ def main():
 
     # Create meta batch
     s1_db = create_batch_of_tasks(s1_train_dataset, is_shuffle = True, batch_size = metatraining_args.outer_batch_size) 
-    s2_db = create_batch_of_tasks(s2_train_dataset, is_shuffle = True, batch_size = metatraining_args.outer_batch_size) 
-    s3_db = create_batch_of_tasks(s3_train_dataset, is_shuffle = True, batch_size = metatraining_args.outer_batch_size) 
+    # s2_db = create_batch_of_tasks(s2_train_dataset, is_shuffle = True, batch_size = metatraining_args.outer_batch_size) 
+    # s3_db = create_batch_of_tasks(s3_train_dataset, is_shuffle = True, batch_size = metatraining_args.outer_batch_size) 
 
     # Define Data Loader
 
@@ -337,7 +336,7 @@ def main():
     mtl_optimizer = Adam(metalearner.model.parameters(), lr=metatraining_args.mtl_update_lr)
    
 
-    for source_idx, db in enumerate([s1_db, s2_db, s3_db]):
+    for source_idx, db in enumerate([s1_db]): # , s2_db, s3_db]):
 
         for step, task_batch in enumerate(db):
             # Meta-Training(FOMAML)
@@ -391,3 +390,6 @@ def main():
         target_finetune_loss.append(loss.item())
 
     print("Target Loss: ", np.mean(target_finetune_loss))
+
+if __name__ == '__main__':
+    main()

@@ -93,7 +93,7 @@ if is_torch_available():
             task: str,
             max_seq_length: Optional[int] = None,
             overwrite_cache=False,
-            # mode: Split = Split.train,
+            mode: Split = Split.train,
         ):
             processor = processors[task]()
 
@@ -151,7 +151,7 @@ if is_torch_available():
             task: str,
             max_seq_length: Optional[int] = None,
             overwrite_cache=False,
-            # mode: Split = Split.train,
+            mode: Split = Split.train,
         ):
             processor = processors[task]()
 

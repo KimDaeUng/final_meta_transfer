@@ -1,10 +1,12 @@
 import logging
 import os
+import random
+
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 import numpy as np
-from maml import *
+from maml import MetaLearner
 from transformers import (
     AutoConfig,
     AutoModelForMultipleChoice,
@@ -15,12 +17,15 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
-from utils_multiple_choice import MultipleChoiceDataset, Split, processors
+from utils_multiple_choice import MetaMultipleChoiceDataset, MultipleChoiceDataset, Split, processors
 from sklearn.metrics import accuracy_score
 
-
+import torch
+from torch.optim import Adam
 from .data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
+from torch.utils.data.sampler import RandomSampler, Sampler, SequentialSampler
 from torch.utils.data.dataloader import DataLoader
+from torch.nn import functional as F
 
 
 
@@ -125,7 +130,7 @@ class MetaTrainingArguments:
         metadata={"help":""},
     )
     bert_model: str = field(
-        data='bert-base-uncased',
+        default='bert-base-uncased',
         metadata={"help": "" },
     )
 
@@ -275,18 +280,18 @@ def main():
     )
 
     # [TODO]:Modify this...
-    target_test_dataset = (
-        MultipleChoiceDataset(
-            data_dir=os.path.join(data_args.data_dir, 'cqa'), 
-            tokenizer=tokenizer,
-            task='cqa_clf',
-            max_seq_length=data_args.max_seq_length,
-            overwrite_cache=data_args.overwrite_cache,
-            mode=Split.test,
-        )
-        if training_args.do_train
-        else None
-    )
+    # target_test_dataset = (
+    #     MultipleChoiceDataset(
+    #         data_dir=os.path.join(data_args.data_dir, 'cqa'), 
+    #         tokenizer=tokenizer,
+    #         task='cqa_clf',
+    #         max_seq_length=data_args.max_seq_length,
+    #         overwrite_cache=data_args.overwrite_cache,
+    #         mode=Split.test,
+    #     )
+    #     if training_args.do_train
+    #     else None
+    # )
 
     def compute_metrics(p: EvalPrediction) -> Dict:
         preds = np.argmax(p.predictions, axis=1)
@@ -297,9 +302,9 @@ def main():
 
 
     # Create meta batch
-    s1_db = create_batch_of_tasks(s1_train_dataset, is_shuffle = True, batch_size = args.outer_batch_size) 
-    s2_db = create_batch_of_tasks(s2_train_dataset, is_shuffle = True, batch_size = args.outer_batch_size) 
-    s3_db = create_batch_of_tasks(s3_train_dataset, is_shuffle = True, batch_size = args.outer_batch_size) 
+    s1_db = create_batch_of_tasks(s1_train_dataset, is_shuffle = True, batch_size = metatraining_args.outer_batch_size) 
+    s2_db = create_batch_of_tasks(s2_train_dataset, is_shuffle = True, batch_size = metatraining_args.outer_batch_size) 
+    s3_db = create_batch_of_tasks(s3_train_dataset, is_shuffle = True, batch_size = metatraining_args.outer_batch_size) 
 
     # Define Data Loader
 
@@ -322,13 +327,13 @@ def main():
     target_train_sampler = _get_train_sampler(target_train_dataset)
 
     target_train_dataloader = DataLoader(target_train_dataset,
-    batch_size=args.train_batch_size,
+    batch_size=training_args.train_batch_size,
     sampler=target_train_sampler,
     collate_fn=DataCollatorWithPadding(tokenizer),
-    drop_last=args.dataloader_drop_last)
+    drop_last=training_args.dataloader_drop_last)
 
     
-    metalearner = MetaLearner(meta_training_args)
+    metalearner = MetaLearner(metatraining_args)
     mtl_optimizer = Adam(metalearner.model.parameters(), lr=metatraining_args.mtl_update_lr)
    
 
@@ -346,7 +351,7 @@ def main():
             # target_batch = iter(target_train_dataloader).next()
             target_train_loss = []
             target_train_acc = []
-            for target_batch in target_train_dataset:
+            for target_batch in target_train_dataloader:
                 metalearner.model.train()
                 target_batch = metalearner.prepare_inputs(target_batch)
                 outputs = metalearner.model(**target_batch)
@@ -367,7 +372,7 @@ def main():
                 target_train_loss.append(loss.item())
 
             print("Target Loss: ", np.mean(target_train_loss))
-            print("Target Acc: ", np.mean(task_accs))
+            print("Target Acc: ", np.mean(target_train_acc))
             
             # end fine tuning
         
@@ -375,7 +380,7 @@ def main():
     
     # MTL : Normal fine tuning
     target_finetune_loss = []
-    for step, target_batch in enumerate(target_train_dataset):
+    for target_batch in target_train_dataloader:
         metalearner.model.train()
         target_batch = metalearner.prepare_inputs(target_batch)
         outputs = metalearner.model(**target_batch)

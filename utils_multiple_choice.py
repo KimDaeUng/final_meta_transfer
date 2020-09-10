@@ -136,6 +136,65 @@ if is_torch_available():
         def __getitem__(self, i) -> InputFeatures:
             return self.features[i]
 
+    class MetaMultipleChoiceDataset(Dataset):
+        """
+        This will be superseded by a framework-agnostic approach
+        soon.
+        """
+
+        features: List[InputFeatures]
+
+        def __init__(
+            self,
+            data_dir: str,
+            tokenizer: PreTrainedTokenizer,
+            task: str,
+            max_seq_length: Optional[int] = None,
+            overwrite_cache=False,
+            # mode: Split = Split.train,
+        ):
+            processor = processors[task]()
+
+            cached_features_file = os.path.join(
+                data_dir,
+                "cached_{}_{}_{}_{}".format(mode.value, tokenizer.__class__.__name__, str(max_seq_length), task,),
+            )
+
+            # Make sure only the first process in distributed training processes the dataset,
+            # and the others will use the cache.
+
+            lock_path = cached_features_file + ".lock"
+            with FileLock(lock_path):
+
+                if os.path.exists(cached_features_file) and not overwrite_cache:
+                    logger.info(f"Loading features from cached file {cached_features_file}")
+                    features = torch.load(cached_features_file)
+                    self.features_S, self.features_Q = features[0], features[1]
+                    del features
+
+                else:
+                    logger.info(f"Creating features from dataset file at {data_dir}")
+                    label_list = processor.get_labels()
+                    # To Satisfy the Support Set / Query Set setting, 
+                    if mode == Split.test:
+                        examples = processor.get_test_examples(data_dir)
+                    else:
+                        examples_S = processor.get_train_examples(data_dir)
+                        examples_Q = processor.get_dev_examples(data_dir)
+
+                    logger.info("Support examples: %s", len(examples_S))
+                    self.features_S = convert_examples_to_features(examples_S, label_list, max_seq_length, tokenizer,)
+                    self.features_Q = convert_examples_to_features(examples_Q, label_list, max_seq_length, tokenizer,)
+                    self.len_Q = len(self.features_Q)
+                    logger.info("Saving features into cached file %s", cached_features_file)
+                    torch.save((self.features_S, self.features_Q), cached_features_file)
+
+        def __len__(self):
+            return len(self.features_S)
+
+        def __getitem__(self, i) -> InputFeatures:
+            return self.features_S[i], self.features_Q[i%self.len_Q]
+
 class DataProcessor:
     """Base class for data converters for multiple choice data sets."""
 

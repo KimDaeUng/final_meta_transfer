@@ -152,6 +152,9 @@ if is_torch_available():
             max_seq_length: Optional[int] = None,
             overwrite_cache=False,
             mode: Split = Split.train,
+            num_task: int,
+            k_support: int,
+            k_query: int
         ):
             processor = processors[task]()
 
@@ -168,10 +171,7 @@ if is_torch_available():
 
                 if os.path.exists(cached_features_file) and not overwrite_cache:
                     logger.info(f"Loading features from cached file {cached_features_file}")
-                    features = torch.load(cached_features_file)
-                    self.features_S, self.features_Q = features[0], features[1]
-                    self.len_Q = len(self.features_Q)
-                    del features
+                    self.features = torch.load(cached_features_file)
 
                 else:
                     logger.info(f"Creating features from dataset file at {data_dir}")
@@ -182,20 +182,36 @@ if is_torch_available():
                     else:
                         examples_S = processor.get_train_examples(data_dir)
                         examples_Q = processor.get_dev_examples(data_dir)
+                        examples = examples_S + examples_Q
+                        del examples_S, examples_Q
 
-                    logger.info("Support examples: %s", len(examples_S))
-                    self.features_S = convert_examples_to_features(examples_S, label_list, max_seq_length, tokenizer,)
-                    logger.info("Query examples: %s", len(examples_Q))
-                    self.features_Q = convert_examples_to_features(examples_Q, label_list, max_seq_length, tokenizer,)
-                    self.len_Q = len(self.features_Q)
+                    logger.info("examples: %s", len(examples))
+                    self.features = convert_examples_to_features(examples, label_list, max_seq_length, tokenizer,)
                     logger.info("Saving features into cached file %s", cached_features_file)
-                    torch.save((self.features_S, self.features_Q), cached_features_file)
+                    torch.save(self.features, cached_features_file)
+
+            self.num_task = num_task
+            
+
+        def create_batch(self, num_task):
+            self.supports = []
+            self.queries = []
+
+            for _ in range(num_task):
+
+                
+                select_examples = random.sample(self.features, self.k_support + self.k_query)
+                exam_train = select_examples[:self.k_support]
+                exam_test  = select_examples[self.k_support:]
+
+                self.supports.append(exam_train)
+                self.queries.append(exam_test)
 
         def __len__(self):
-            return len(self.features_S)
+            return self.num_task
 
         def __getitem__(self, i) -> InputFeatures:
-            return self.features_S[i], self.features_Q[i%self.len_Q]
+            return self.supports[i], self.queries[i]
 
 class DataProcessor:
     """Base class for data converters for multiple choice data sets."""

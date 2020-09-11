@@ -65,6 +65,7 @@ class MetaLearner(nn.Module):
         num_inner_update_step = self.inner_update_step if training else self.inner_update_step_eval
 
         for task_id, task in enumerate(batch_tasks):
+            print(task)
             support = task[0]
             query   = task[1]
             

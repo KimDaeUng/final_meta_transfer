@@ -210,6 +210,9 @@ def main():
             max_seq_length=data_args.max_seq_length,
             overwrite_cache=data_args.overwrite_cache,
             mode=Split.train,
+            num_task=100,
+            k_support=5,
+            k_query=1,
         )
         if training_args.do_train
         else None
@@ -223,6 +226,9 @@ def main():
     #         max_seq_length=data_args.max_seq_length,
     #         overwrite_cache=data_args.overwrite_cache,
     #         mode=Split.train,
+            # num_task=100,
+            # k_support=5,
+            # k_query=1,
     #     )
     #     if training_args.do_train
     #     else None
@@ -236,6 +242,9 @@ def main():
     #         max_seq_length=data_args.max_seq_length,
     #         overwrite_cache=data_args.overwrite_cache,
     #         mode=Split.train,
+            # num_task=100,
+            # k_support=5,
+            # k_query=1,
     #     )
     #     if training_args.do_train
     #     else None
@@ -341,7 +350,9 @@ def main():
         for step, task_batch in enumerate(db):
             # Meta-Training(FOMAML)
             f = open('log.txt', 'a')
-
+            print("\n")
+            print(task_batch)
+            print("\n")
             acc, loss = metalearner(task_batch)
             print('Step:', step, '\tTraining Loss | Acc:', loss, " | ",acc)
             f.write(str(acc) + '\n')

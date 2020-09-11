@@ -1,7 +1,7 @@
 import logging
 import os
 import random
-
+import tqdm
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
@@ -122,11 +122,11 @@ class MetaTrainingArguments:
         metadata={"help":""},
     )
     inner_update_step: int = field(
-        default=5,
+        default=1,
         metadata={"help":""},
     )
     inner_update_step_eval: int = field(
-        default=10,
+        default=1,
         metadata={"help":""},
     )
     bert_model: str = field(
@@ -211,7 +211,7 @@ def main():
             max_seq_length=data_args.max_seq_length,
             overwrite_cache=data_args.overwrite_cache,
             mode=Split.train,
-            num_task=100,
+            num_task=20,
             k_support=5,
             k_query=1,
         )
@@ -363,11 +363,17 @@ def main():
         target_train_loss = []
         target_train_acc = []
         metalearner.model.cuda()
-        for target_batch in target_train_dataloader:
-            metalearner.model.train()
+        metalearner.model.train()
+        print(metalearner.model.parameters())
+
+        for target_batch in tqdm.tqdm(target_train_dataloader):
             target_batch = metalearner.prepare_inputs(target_batch)
             outputs = metalearner.model(**target_batch)
             loss = outputs[0]
+            loss.backward()
+            metalearner.outer_optimizer.step()
+            metalearner.outer_optimizer.zero_grad()
+            target_train_loss.append(loss.item())
 
             # Compute Acc for target
             logits = F.softmax(outputs[1], dim=1)
@@ -378,10 +384,7 @@ def main():
             acc = accuracy_score(pre_label_id,target_label_id)
             target_train_acc.append(acc)
 
-            loss.backward()
-            metalearner.outer_optimizer.step()
-            metalearner.outer_optimizer.zero_grad()
-            target_train_loss.append(loss.item())
+
 
         print("Target Loss: ", np.mean(target_train_loss))
         print("Target Acc: ", np.mean(target_train_acc))

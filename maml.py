@@ -39,7 +39,7 @@ class MetaLearner(nn.Module):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         self.model = BertForMultipleChoice.from_pretrained(self.bert_model)
-        # self.model.to(self.device)
+        self.model.to(self.device)
         self.outer_optimizer = Adam(self.model.parameters(), lr=self.outer_update_lr)
         self.tokenizer = tokenizer
         
@@ -122,7 +122,7 @@ class MetaLearner(nn.Module):
                 q_loss = q_outputs[0]
                 q_loss.backward()
                 task_losses.append(q_loss.item())
-                fast_model.to(torch.device('cpu'))
+                # fast_model.to(torch.device('cpu'))
                 for i, params in enumerate(fast_model.parameters()):
                     if task_id == 0:
                         sum_gradients.append(deepcopy(params.grad))

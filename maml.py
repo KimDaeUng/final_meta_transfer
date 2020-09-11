@@ -4,11 +4,16 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler
 from torch.optim import Adam
 from torch.nn import CrossEntropyLoss
 from transformers import BertForMultipleChoice
+from transformers.data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
+from torch.utils.data.sampler import RandomSampler, Sampler, SequentialSampler
+
 from copy import deepcopy
 import gc
 import torch
 from sklearn.metrics import accuracy_score
 import numpy as np
+
+
 
 from typing import Dict, Optional, Union, Any
 
@@ -17,7 +22,7 @@ class MetaLearner(nn.Module):
     """
     Meta Learner
     """
-    def __init__(self, args):
+    def __init__(self, args, tokenizer):
         """
         :param args:
         """
@@ -25,7 +30,7 @@ class MetaLearner(nn.Module):
         
         # self.num_labels = args.num_labels
         self.outer_batch_size = args.outer_batch_size
-        # self.inner_batch_size = args.inner_batch_size
+        self.inner_batch_size = args.inner_batch_size
         self.outer_update_lr  = args.outer_update_lr
         self.inner_update_lr  = args.inner_update_lr
         self.inner_update_step = args.inner_update_step
@@ -34,7 +39,10 @@ class MetaLearner(nn.Module):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         self.model = BertForMultipleChoice.from_pretrained(self.bert_model)
+        # self.model.to(self.device)
         self.outer_optimizer = Adam(self.model.parameters(), lr=self.outer_update_lr)
+        self.tokenizer = tokenizer
+        
         self.model.train()
 
     def prepare_inputs(self, inputs: Dict[str, Union[torch.Tensor, Any]]) -> Dict[str, Union[torch.Tensor, Any]]:
@@ -65,13 +73,14 @@ class MetaLearner(nn.Module):
         num_inner_update_step = self.inner_update_step if training else self.inner_update_step_eval
 
         for task_id, task in enumerate(batch_tasks):
-            print(task)
+            # print(task)
             support = task[0]
             query   = task[1]
             
             fast_model = deepcopy(self.model)
             fast_model.to(self.device)
-            support_dataloader = DataLoader(support, sampler=RandomSampler(support),
+            support_dataloader = DataLoader(support, collate_fn=default_data_collator, # DataCollatorWithPadding(self.tokenizer),
+                                            sampler=RandomSampler(support),
                                             batch_size=self.inner_batch_size)
             
             inner_optimizer = Adam(fast_model.parameters(), lr=self.inner_update_lr)
@@ -99,7 +108,7 @@ class MetaLearner(nn.Module):
                 if i % 4 == 0:
                     print("Inner Loss: ", np.mean(all_loss))
 
-            query_dataloader = DataLoader(query, sampler=None, batch_size=len(query))
+            query_dataloader = DataLoader(query, collate_fn=default_data_collator, sampler=None, batch_size=len(query))
             query_batch = iter(query_dataloader).next()
 
             query_batch = self.prepare_inputs(query_batch)
@@ -112,7 +121,7 @@ class MetaLearner(nn.Module):
             if training:
                 q_loss = q_outputs[0]
                 q_loss.backward()
-                task_losses.append(q_loss)
+                task_losses.append(q_loss.item())
                 fast_model.to(torch.device('cpu'))
                 for i, params in enumerate(fast_model.parameters()):
                     if task_id == 0:

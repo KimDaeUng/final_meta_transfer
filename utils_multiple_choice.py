@@ -18,6 +18,7 @@
 
 import csv
 import glob
+import random
 import json
 import logging
 import os
@@ -149,12 +150,12 @@ if is_torch_available():
             data_dir: str,
             tokenizer: PreTrainedTokenizer,
             task: str,
+            num_task: int,
+            k_support: int,
+            k_query: int,
             max_seq_length: Optional[int] = None,
             overwrite_cache=False,
             mode: Split = Split.train,
-            num_task: int,
-            k_support: int,
-            k_query: int
         ):
             processor = processors[task]()
 
@@ -191,15 +192,16 @@ if is_torch_available():
                     torch.save(self.features, cached_features_file)
 
             self.num_task = num_task
+            self.k_support = k_support
+            self.k_query = k_query
+            self.create_batch(self.num_task)
             
-
         def create_batch(self, num_task):
+            logger.info("Creating supports and queries")
             self.supports = []
             self.queries = []
 
-            for _ in range(num_task):
-
-                
+            for _ in tqdm.tqdm(range(num_task)):                
                 select_examples = random.sample(self.features, self.k_support + self.k_query)
                 exam_train = select_examples[:self.k_support]
                 exam_test  = select_examples[self.k_support:]

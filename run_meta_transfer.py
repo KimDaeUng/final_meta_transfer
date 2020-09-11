@@ -101,8 +101,9 @@ class MetaTrainingArguments:
         default=2,
         metadata={"help":""},
     )
+    # Same to k_support
     inner_batch_size: int = field(
-        default=12,
+        default=5,
         metadata={"help":""},
     )
     # learning rate : lambda 
@@ -337,11 +338,11 @@ def main():
     target_train_dataloader = DataLoader(target_train_dataset,
     batch_size=training_args.train_batch_size,
     sampler=target_train_sampler,
-    collate_fn=DataCollatorWithPadding(tokenizer),
+    collate_fn=default_data_collator, #DataCollatorWithPadding(tokenizer),
     drop_last=training_args.dataloader_drop_last)
 
     
-    metalearner = MetaLearner(metatraining_args)
+    metalearner = MetaLearner(metatraining_args, tokenizer)
     mtl_optimizer = Adam(metalearner.model.parameters(), lr=metatraining_args.mtl_update_lr)
    
 
@@ -350,39 +351,40 @@ def main():
         for step, task_batch in enumerate(db):
             # Meta-Training(FOMAML)
             f = open('log.txt', 'a')
-            print("\n")
-            print(task_batch)
-            print("\n")
+            # print("\n")
+            # print(task_batch)
+            # print("\n")
             acc, loss = metalearner(task_batch)
             print('Step:', step, '\tTraining Loss | Acc:', loss, " | ",acc)
             f.write(str(acc) + '\n')
 
-            # Fine-tuning on Target Set
-            # target_batch = iter(target_train_dataloader).next()
-            target_train_loss = []
-            target_train_acc = []
-            for target_batch in target_train_dataloader:
-                metalearner.model.train()
-                target_batch = metalearner.prepare_inputs(target_batch)
-                outputs = metalearner.model(**target_batch)
-                loss = outputs[0]
+        # Fine-tuning on Target Set
+        # target_batch = iter(target_train_dataloader).next()
+        target_train_loss = []
+        target_train_acc = []
+        metalearner.model.cuda()
+        for target_batch in target_train_dataloader:
+            metalearner.model.train()
+            target_batch = metalearner.prepare_inputs(target_batch)
+            outputs = metalearner.model(**target_batch)
+            loss = outputs[0]
 
-                # Compute Acc for target
-                logits = F.softmax(outputs[1], dim=1)
-                target_label_id = target_batch.get('labels')
-                pre_label_id = torch.argmax(logits,dim=1)
-                pre_label_id = pre_label_id.detach().cpu().numpy().tolist()
-                target_label_id = target_label_id.detach().cpu().numpy().tolist()
-                acc = accuracy_score(pre_label_id,target_label_id)
-                target_train_acc.append(acc)
+            # Compute Acc for target
+            logits = F.softmax(outputs[1], dim=1)
+            target_label_id = target_batch.get('labels')
+            pre_label_id = torch.argmax(logits,dim=1)
+            pre_label_id = pre_label_id.detach().cpu().numpy().tolist()
+            target_label_id = target_label_id.detach().cpu().numpy().tolist()
+            acc = accuracy_score(pre_label_id,target_label_id)
+            target_train_acc.append(acc)
 
-                loss.backward()
-                metalearner.outer_optimizer.step()
-                metalearner.outer_optimizer.zero_grad()
-                target_train_loss.append(loss.item())
+            loss.backward()
+            metalearner.outer_optimizer.step()
+            metalearner.outer_optimizer.zero_grad()
+            target_train_loss.append(loss.item())
 
-            print("Target Loss: ", np.mean(target_train_loss))
-            print("Target Acc: ", np.mean(target_train_acc))
+        print("Target Loss: ", np.mean(target_train_loss))
+        print("Target Acc: ", np.mean(target_train_acc))
             
             # end fine tuning
         
